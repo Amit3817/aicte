@@ -1,0 +1,76 @@
+const User = require('../model/user');
+const bcrypt=require("bcryptjs");
+const jwt=require("jsonwebtoken")
+const nodemailer=require('nodemailer')
+
+
+
+const sent=async (req,res,next)=>{
+  try{
+  const emailId=req.body.email||req.user.email;
+  const otpGenerator = require('otp-generator')
+  const old=await User.findOne({email:emailId.toLowerCase()});
+  
+  const otp=otpGenerator.generate(4, { upperCaseAlphabets: false,lowerCaseAlphabets: false, specialChars: false });
+
+
+
+    // Create a SMTP transporter object
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.ethereal.email',
+      port: 587,
+      auth: {
+          user: 'edwin9@ethereal.email',
+          pass: 'UQ4K1ejnkqHke6tkYR'
+      }});
+    // Message object
+    let message = {
+        from: 'otpverify@aicte',
+        to: emailId,
+        text: `Your otp is ${otp}`,
+        html: `<p><b>${otp}</b> is the otp</p>`
+    };
+    transporter.sendMail(message, (err, info) => {
+        if (err) {
+            console.log('Error occurred. ' + err.message);
+            return process.exit(1);
+        }
+
+        console.log('Message sent: %s', info.messageId);
+        // Preview only available when sending through an Ethereal account
+        console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
+    });
+      const token=jwt.sign({email:emailId.toLowerCase()},process.env.secretkey,{expiresIn:"1d"});
+      const otp2=await bcrypt.hash(otp,12);
+      const updated= await User.updateOne({email:emailId.toLowerCase()},{
+        $set:{
+           otp:otp2,
+           expireotp:Date.now()+120000,
+           token
+        }});        
+        if(!old)
+        return res.status(201).json({success:true,password:false,msg:"User created successfully. Check mail",token});
+        else
+        {
+          return res.status(201).json({success:true,password:false,msg:"Enter otp sent to mail",token});
+        }
+  }
+catch(err)
+{      
+  console.log(err);
+  console.log('mail not sent');
+  next(err);
+}
+}
+
+module.exports={sent}
+
+
+
+
+
+
+
+
+
+
