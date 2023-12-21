@@ -1,21 +1,17 @@
 const User=require('../model/user');
 const Institute=require("../model/institute")
 const regex=require("../middleware/regex");
+const { validationResult } = require('express-validator');
 
-const form1=async (req,res)=>{
+const form1=async (req,res,next)=>{
     try{
         const {iname,atype,rejected}=req.body
-        if(!iname)
-        {
-            return res.json({success:false,msg:"Please enter the institute name"});   
-        }
-        if(!atype)
-        {
-            return res.json({success:false,msg:"Please enter the institute type"});   
-        }
-        if(!rejected)
-        {
-            return res.json({success:false,msg:"Please enter the rejected field"});   
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          const error = new Error('Validation failed.');
+          error.statusCode = 422;
+          error.data = errors.array();
+          next(error);
         }
         if(regex.checkAbbreviation(iname)){
             return res.json({success:false,msg:"Institute name abbreviation cannot be 'IIM', 'IIT', 'IISc', 'NIT', 'IISER', 'IIIT', 'IIEST', 'AICTE', 'UGC', 'MoE', 'GoI'"});   
@@ -25,7 +21,22 @@ const form1=async (req,res)=>{
             uatype=="new"
         else
           uatype="old"
-        const updated= await Institute.create({
+        const old=await Institute.findOne({user:req.user._id}) 
+                  if(old){
+        const created= await Institute.updateOne({user:req.user._id},{
+            $set:{
+                iname,
+                atype:uatype,
+                rejected,
+                fees:0
+              }});
+            if(created)
+            {
+               return res.json({success:true,msg:"Form1 updated successfully",token:req.user.token});
+            }
+        }
+        else if(!old){
+            const updated= await Institute.create({
                 user:req.user._id,
                 iname,
                 atype:uatype,
@@ -35,6 +46,8 @@ const form1=async (req,res)=>{
             {
                return res.json({success:true,msg:"Form1 submitted successfully",token:req.user.token});
             }
+
+        }
         
             return res.json({success:false,msg:"Institue name not added"});
         
@@ -49,18 +62,17 @@ const form1=async (req,res)=>{
 
 
 
-const terOperationalExpense=async (req,res)=>{
+const terOperationalExpense=async (req,res,next)=>{
     try{
     const {ter,oExpense}=req.body
-    if(!ter)
-    {
-     return res.json({success:false,msg:"Please enter the option"});
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const error = new Error('Validation failed.');
+      error.statusCode = 422;
+      error.data = errors.array();
+      next(error);
     }
-    if(!oExpense)
-    {
-     return res.json({success:false,msg:"Please enter the option"});
-    }
-    const institute=await Institute.findOne({user:req.user._id});
+    const institute=req.institute
     var fees=institute.fees;
     var uter;
     var itype;
@@ -137,17 +149,10 @@ const terOperationalExpense=async (req,res)=>{
             uoExpense=50
             program.push("Planing")
         }
-        else if(i==7)
-        {
-            fees=fees+50
-            uoExpense=50
-            program.push("Planing")
-        }
 
     }
 }
-    programs=[...program]
-    console.log(programs)
+    var programs=[...program]
 
    const updated= await Institute.updateOne({user:req.user._id},{
     $set:{
@@ -165,16 +170,23 @@ const terOperationalExpense=async (req,res)=>{
     return res.json({success:false,msg:"Ter not recorded"});
 
 }
-catch(err0r){
+catch(error){
     console.log(error);
     next(error);
  }
 }
 
-const security=async (req,res)=>{
+const security=async (req,res,next)=>{
     try{
         const {secDeposit}=req.body
-        const institute=await Institute.findOne({user:req.user._id});
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          const error = new Error('Validation failed.');
+          error.statusCode = 422;
+          error.data = errors.array();
+          next(error);
+        }
+        const institute=req.institute
         var fees=institute.fees;
         var usDeposit=0
 
@@ -198,6 +210,26 @@ const security=async (req,res)=>{
                 return 15
             }
         }
+        var fullDegree="";
+        var degreeDetails=new Array();
+
+       function stringDefine(j){
+        var degree;
+            if(j==0)
+              return degree="Diploma/Post Diploma for Minority/Women's /PwBD /J&K /Ladakh /North Eastern States"
+            else if(j==1)
+               return degree="Diploma/Post Diploma for others"
+            else if(j==2)
+               return degree="Under Graduate for Minority/Women's /PwBD /J&K /Ladakh /North Eastern States"
+            else if(j==3)
+                return degree="Under Graduate for others"
+            else if(j==4)
+                 return degree="Post Graduate Diploma/Post Graduate Degree for Minority/Women's /PwBD /J&K /Ladakh /North Eastern States"
+            else if(j==5)
+            return degree="Post Graduate Diploma/Post Graduate Degree for others"
+       }
+
+
         for(var i=0;i<7;i++)
         {
             for(var j=0;j<=5;j++)
@@ -205,19 +237,27 @@ const security=async (req,res)=>{
                 if(secDeposit[i][j]==true)
                     {
                         usDeposit=calcharge(i,j)+usDeposit
+                        if(fullDegree=="")
+                        fullDegree=fullDegree+stringDefine(j)
+                        else
+                        fullDegree=fullDegree+" and "+stringDefine(j)
                         fees=fees+usDeposit
+
                     }
             }
+            degreeDetails.push(fullDegree);
+            fullDegree=""
         }    
        const updated= await Institute.updateOne({User:req.user._id},{
         $set:{
            fees,
            sDeposit:usDeposit,
-           datafull:true
+           datafull:true,
+           degreeDetails
         }});
         if(updated)
         {
-           return res.json({success:true,msg:"Security fees updated",token:req.user.token});
+           return res.json({success:true,msg:"Security fees updated",token:req.user.token,institute:req.institute});
         }
     
         return res.json({success:false,msg:"Security fees recorded"});
